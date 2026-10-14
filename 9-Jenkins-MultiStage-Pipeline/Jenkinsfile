@@ -1,4 +1,3 @@
-```groovy
 pipeline {
     agent any
 
@@ -7,7 +6,9 @@ pipeline {
             steps {
                 echo 'Installing Python dependencies...'
                 sh '''
-                    python3 -m pip install --user -r requirements.txt
+                    python3 -m venv .venv
+                    .venv/bin/pip install --upgrade pip
+                    .venv/bin/pip install -r requirements.txt
                 '''
             }
         }
@@ -15,7 +16,9 @@ pipeline {
         stage('Test') {
             steps {
                 echo 'Running unit tests...'
-                sh 'python3 -m unittest discover -s . -p "test_*.py"'
+                sh '''
+                    .venv/bin/python -m unittest discover -s . -p "test_*.py"
+                '''
             }
         }
 
@@ -34,7 +37,14 @@ pipeline {
                 echo 'Starting Flask application...'
                 sh '''
                     cd "$WORKSPACE/python-app-deploy"
-                    nohup python3 app.py > app.log 2>&1 &
+
+                    if [ -f app.pid ]; then
+                        kill "$(cat app.pid)" 2>/dev/null || true
+                    fi
+
+                    nohup "$WORKSPACE/.venv/bin/python" app.py \
+                        > app.log 2>&1 &
+
                     echo $! > app.pid
                 '''
             }
@@ -42,9 +52,11 @@ pipeline {
 
         stage('Test Application') {
             steps {
-                echo 'Checking the deployed application...'
+                echo 'Testing the deployed application...'
                 sh '''
-                    python3 -c "
+                    cd "$WORKSPACE/python-app-deploy"
+
+                    "$WORKSPACE/.venv/bin/python" -c "
 from app import app
 response = app.test_client().get('/')
 assert response.status_code == 200
@@ -60,9 +72,13 @@ print('Deployed application test passed!')
         success {
             echo 'Pipeline completed successfully!'
         }
+
         failure {
-            echo 'Pipeline failed. Check the console output.'
+            echo 'Pipeline failed. Check Console Output for errors.'
+        }
+
+        always {
+            echo 'Pipeline execution finished.'
         }
     }
 }
-```
