@@ -4,37 +4,42 @@ pipeline {
     stages {
         stage('Build') {
             steps {
-                echo 'Installing Python dependencies...'
-                sh '''
-                    python3 -m venv .venv
-                    .venv/bin/pip install --upgrade pip
-                    .venv/bin/pip install -r requirements.txt
-                '''
+                dir('9-Jenkins-MultiStage-Pipeline') {
+                    echo 'Creating virtual environment and installing dependencies...'
+                    sh '''
+                        python3 -m venv .venv
+                        .venv/bin/pip install -r requirements.txt
+                    '''
+                }
             }
         }
 
         stage('Test') {
             steps {
-                echo 'Running unit tests...'
-                sh '''
-                    .venv/bin/python -m unittest discover -s . -p "test_*.py"
-                '''
+                dir('9-Jenkins-MultiStage-Pipeline') {
+                    echo 'Running tests...'
+                    sh '''
+                        .venv/bin/python -m unittest discover -s . -p "test_*.py"
+                    '''
+                }
             }
         }
 
         stage('Deploy') {
             steps {
-                echo 'Deploying application...'
-                sh '''
-                    mkdir -p "$WORKSPACE/python-app-deploy"
-                    cp app.py requirements.txt "$WORKSPACE/python-app-deploy/"
-                '''
+                dir('9-Jenkins-MultiStage-Pipeline') {
+                    echo 'Deploying application...'
+                    sh '''
+                        mkdir -p "$WORKSPACE/python-app-deploy"
+                        cp app.py requirements.txt "$WORKSPACE/python-app-deploy/"
+                    '''
+                }
             }
         }
 
         stage('Run Application') {
             steps {
-                echo 'Starting Flask application...'
+                echo 'Running application...'
                 sh '''
                     cd "$WORKSPACE/python-app-deploy"
 
@@ -42,7 +47,7 @@ pipeline {
                         kill "$(cat app.pid)" 2>/dev/null || true
                     fi
 
-                    nohup "$WORKSPACE/.venv/bin/python" app.py \
+                    nohup "$WORKSPACE/9-Jenkins-MultiStage-Pipeline/.venv/bin/python" app.py \
                         > app.log 2>&1 &
 
                     echo $! > app.pid
@@ -52,18 +57,18 @@ pipeline {
 
         stage('Test Application') {
             steps {
-                echo 'Testing the deployed application...'
-                sh '''
-                    cd "$WORKSPACE/python-app-deploy"
-
-                    "$WORKSPACE/.venv/bin/python" -c "
+                dir('9-Jenkins-MultiStage-Pipeline') {
+                    echo 'Testing deployed application...'
+                    sh '''
+                        .venv/bin/python -c "
 from app import app
 response = app.test_client().get('/')
 assert response.status_code == 200
 assert response.get_data(as_text=True) == 'Hello, Jenkins Multi-Stage Pipeline!'
-print('Deployed application test passed!')
+print('Application test passed!')
 "
-                '''
+                    '''
+                }
             }
         }
     }
@@ -72,11 +77,9 @@ print('Deployed application test passed!')
         success {
             echo 'Pipeline completed successfully!'
         }
-
         failure {
-            echo 'Pipeline failed. Check Console Output for errors.'
+            echo 'Pipeline failed. Check the logs for more details.'
         }
-
         always {
             echo 'Pipeline execution finished.'
         }
